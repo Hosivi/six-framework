@@ -1,0 +1,7 @@
+@html(Counter){<div class="counter"><button onClick={dec}>-</button><span class="val">{count()}</span><button onClick={inc}>+</button></div>}
+
+import { signal } from "../../src/reactive/index";
+
+const count = signal(0);
+const dec = () => count.update((c) => c - 1);
+const inc = () => count.update((c) => c + 1);

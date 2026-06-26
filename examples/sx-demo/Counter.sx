@@ -1,0 +1,9 @@
+import { signal } from "../../src/reactive/index";
+
+// Inline @html{...} -> per-instance state: every Counter() owns its own signal.
+export const Counter = () => {
+  const count = signal(0);
+  const dec = () => count.update((c) => c - 1);
+  const inc = () => count.update((c) => c + 1);
+  return @html{<div class="counter"><button class="btn" onClick={dec}>-</button><span class="val">{count()}</span><button class="btn" onClick={inc}>+</button></div>};
+};

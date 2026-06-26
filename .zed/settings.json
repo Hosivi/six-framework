@@ -1,0 +1,6 @@
+{
+  "//": "Treat .sx single-file components as TypeScript for syntax highlighting + bracket colorization. The @styles / @html blocks will look off until a dedicated .sx language is added.",
+  "file_types": {
+    "TypeScript": ["sx"]
+  }
+}

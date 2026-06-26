@@ -1,0 +1,11 @@
+import { signal } from "../../src/reactive/index";
+
+// A row is an inline @html component (returns an <li> Element).
+const row = (text) => @html{<li>{text}</li>};
+
+// A list region in markup: {items().map(row)} renders an array of nodes.
+export const List = () => {
+  const items = signal(["a", "b"]);
+  const add = () => items.update((l) => [...l, "item" + l.length]);
+  return @html{<div><button onClick={add}>add</button><ul>{items().map(row)}</ul></div>};
+};

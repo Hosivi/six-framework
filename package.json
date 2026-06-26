@@ -1,0 +1,27 @@
+{
+  "name": "sixframework",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "sx — purely functional, fine-grained reactive web framework (reactive core + DOM runtime + .sx compiler). No JSX, no Virtual DOM, no classes.",
+  "main": "src/dom/index.ts",
+  "scripts": {
+    "play": "bun examples/playground.ts",
+    "html": "bun examples/html.ts",
+    "serve": "bun examples/counter/server.ts",
+    "todos": "bun examples/todos/server.ts",
+    "sx": "bun examples/sx-demo/server.ts",
+    "html-demo": "bun examples/sx-demo/counter-server.ts",
+    "products": "bun examples/products/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.10.6",
+    "@types/bun": "latest",
+    "@types/node": "^22.10.0",
+    "happy-dom": "^20.10.6",
+    "oxc-parser": "^0.137.0",
+    "typescript": "^5.7.2"
+  }
+}

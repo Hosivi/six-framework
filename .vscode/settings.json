@@ -1,0 +1,8 @@
+{
+  "//": "Treat .sx single-file components as TypeScript so the editor gives syntax highlighting + bracket-pair colorization, and resolves their exports. NOTE: the @styles / @html blocks will show as TS errors until a dedicated .sx language extension exists.",
+  "files.associations": {
+    "*.sx": "typescript"
+  },
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active"
+}
