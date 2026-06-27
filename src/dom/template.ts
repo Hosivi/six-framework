@@ -29,9 +29,18 @@ export const template = (html: string): (() => Element) => {
  *   - an array of the above  -> a list (e.g. `items().map(row)` = each)
  * An anchor comment keeps the insertion point stable among sibling content.
  */
-export const insert = (parent: Node, accessor: () => unknown): void => {
-  const anchor = document.createComment("");
-  parent.appendChild(anchor);
+export const insert = (
+  parent: Node,
+  accessor: () => unknown,
+  before: ChildNode | null = null,
+): void => {
+  let anchor: ChildNode;
+  if (before) {
+    anchor = before; // insert before an existing marker (e.g. a html`` hole)
+  } else {
+    anchor = document.createComment("");
+    parent.appendChild(anchor);
+  }
   let textNode: Text | null = null;
   let nodes: ChildNode[] = [];
 
@@ -87,6 +96,22 @@ export const bindAttr = (
     const value = accessor();
     if (value === null || value === false) el.removeAttribute(name);
     else el.setAttribute(name, value === true ? "" : String(value));
+  });
+};
+
+/**
+ * Reactive PROPERTY binding at a dynamic hole (lit-html `.prop=${}` form).
+ * Unlike an attribute, a property survives user interaction — essential for
+ * controlled inputs, where `setAttribute("value", …)` would not update the
+ * visible value once the user has typed.
+ */
+export const bindProp = (
+  el: Element,
+  name: string,
+  accessor: () => unknown,
+): void => {
+  effect(() => {
+    (el as unknown as Record<string, unknown>)[name] = accessor();
   });
 };
 

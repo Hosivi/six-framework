@@ -5,7 +5,8 @@ export { when, each } from "./control";
 export { createNode, serialize, toJSON } from "./node";
 export { render } from "./render";
 export { collectStyles, resetStyles } from "./styles";
-export { template, walkElements, insert, bindAttr, bindEvent } from "./template";
+export { template, walkElements, insert, bindAttr, bindProp, bindEvent } from "./template";
+export { html } from "./html";
 
 export type {
   SxNode,

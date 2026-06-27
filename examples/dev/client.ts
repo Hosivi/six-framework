@@ -1,7 +1,7 @@
-// Browser entry: mounts the fluent todo app (signals + when/each).
+// Browser entry for the dev app shell.
 
 import { createRoot } from "../../src/reactive/index";
-import { App } from "./todos";
+import { App } from "./app";
 
 const root = document.getElementById("root");
 if (root) createRoot(() => App().into(root));

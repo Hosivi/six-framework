@@ -3,16 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "sx — purely functional, fine-grained reactive web framework (reactive core + DOM runtime + .sx compiler). No JSX, no Virtual DOM, no classes.",
+  "description": "sx — purely functional, fine-grained reactive web framework (reactive core + DOM runtime + html`` tagged template). No JSX, no Virtual DOM, no classes.",
   "main": "src/dom/index.ts",
   "scripts": {
-    "play": "bun examples/playground.ts",
-    "html": "bun examples/html.ts",
+    "dev": "bun examples/dev/dev.ts",
     "serve": "bun examples/counter/server.ts",
     "todos": "bun examples/todos/server.ts",
-    "sx": "bun examples/sx-demo/server.ts",
-    "html-demo": "bun examples/sx-demo/counter-server.ts",
-    "products": "bun examples/products/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

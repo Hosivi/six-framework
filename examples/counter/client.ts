@@ -1,7 +1,7 @@
-// Browser entry: mounts the .sx counter (scoped @styles + signals).
+// Browser entry: mounts the fluent counter (signals + fine-grained DOM).
 
 import { createRoot } from "../../src/reactive/index";
-import { App } from "./App.sx";
+import { App } from "./counter";
 
 const root = document.getElementById("root");
 if (root) createRoot(() => App().into(root));

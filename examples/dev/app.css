@@ -1,0 +1,31 @@
+  /* --- shell --- */
+  .shell { width: 440px; max-width: 90vw; }
+  .topbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+  .brand { font-weight: 800; font-size: 1.25rem; color: #818cf8; letter-spacing: 0.02em; }
+  .tabs { display: flex; gap: 0.5rem; margin-left: auto; }
+  .tab { border: 1px solid #334155; background: #1e293b; color: #cbd5e1; border-radius: 8px; padding: 0.4rem 0.9rem; cursor: pointer; font: inherit; }
+  .tab:hover { border-color: #6366f1; }
+  .tab[aria-current="page"] { background: #6366f1; border-color: #6366f1; color: #fff; }
+  .stage { display: grid; place-items: center; min-height: 280px; }
+
+  /* --- counter demo (scoped to avoid class collisions with todos) --- */
+  .stage[data-view="counter"] .app { text-align: center; }
+  .stage[data-view="counter"] .title { font-size: 2rem; margin: 0 0 0.25rem; }
+  .stage[data-view="counter"] .subtitle { color: #94a3b8; margin: 0 0 2rem; }
+  .stage[data-view="counter"] .counter { display: flex; align-items: center; justify-content: center; gap: 1rem; }
+  .stage[data-view="counter"] .btn { width: 48px; height: 48px; font-size: 1.5rem; border: 0; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; }
+  .stage[data-view="counter"] .btn:hover { background: #818cf8; }
+  .stage[data-view="counter"] .count { font-size: 2.5rem; font-weight: 700; min-width: 3rem; }
+  .stage[data-view="counter"] .hint { color: #64748b; margin-top: 1.5rem; }
+
+  /* --- todos demo (scoped) --- */
+  .stage[data-view="todos"] .app { width: 380px; }
+  .stage[data-view="todos"] .title { font-size: 1.8rem; margin: 0 0 1rem; }
+  .stage[data-view="todos"] .row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .stage[data-view="todos"] .input { flex: 1; padding: 0.6rem; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; }
+  .stage[data-view="todos"] .btn { border: 0; border-radius: 8px; padding: 0.6rem 1rem; background: #6366f1; color: #fff; font-weight: 600; cursor: pointer; }
+  .stage[data-view="todos"] .list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .stage[data-view="todos"] .todo { display: flex; align-items: center; justify-content: space-between; background: #1e293b; padding: 0.6rem 0.9rem; border-radius: 8px; }
+  .stage[data-view="todos"] .todo__del { border: 0; background: transparent; color: #f87171; font-size: 1rem; cursor: pointer; }
+  .stage[data-view="todos"] .empty { color: #64748b; text-align: center; }
+  .stage[data-view="todos"] .count { color: #64748b; margin-top: 1rem; font-size: 0.85rem; }

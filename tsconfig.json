@@ -12,11 +12,5 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src", "examples", "test"],
-  "exclude": [
-    "node_modules",
-    "examples/counter",
-    "examples/todos",
-    "examples/sx-demo",
-    "examples/products"
-  ]
+  "exclude": ["node_modules"]
 }

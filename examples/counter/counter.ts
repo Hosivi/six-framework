@@ -1,3 +1,7 @@
+// The counter — written in six's native fluent API.
+// Tags are functions, modifiers are chainable closures (no classes, no `this`).
+// Returns an SxNode descriptor: built once, then `.into()` renders it live.
+
 import { signal } from "../../src/reactive/index";
 import { main, h1, p, div, span, button } from "../../src/dom/tags";
 import type { SxNode } from "../../src/dom/types";
@@ -20,14 +24,3 @@ export const App = (): SxNode => {
     ).class("hint"),
   ]).class("app");
 };
-
-@styles {
-  .app { text-align: center; }
-  .title { font-size: 2rem; margin: 0 0 0.25rem; }
-  .subtitle { color: #94a3b8; margin: 0 0 2rem; }
-  .counter { display: flex; align-items: center; justify-content: center; gap: 1rem; }
-  .btn { width: 48px; height: 48px; font-size: 1.5rem; border: 0; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; }
-  .btn:hover { background: #818cf8; }
-  .count { font-size: 2.5rem; font-weight: 700; min-width: 3rem; }
-  .hint { color: #64748b; margin-top: 1.5rem; }
-}
