@@ -21,7 +21,7 @@ export type SxChild =
   | (() => SxChild)
   | SxChild[];
 
-/** A reactive control region produced by when() / each(). */
+/** A reactive control region produced by when() / each() / match() / portal() / errorBoundary(). */
 export type DynamicChild =
   | {
       kind: "when";
@@ -34,6 +34,21 @@ export type DynamicChild =
       items: () => unknown[];
       renderItem: (item: unknown, index: number) => SxNode;
       key: (item: unknown, index: number) => string | number;
+    }
+  | {
+      kind: "match";
+      cases: Array<[() => boolean, () => SxNode]>;
+      fallback?: () => SxNode;
+    }
+  | {
+      kind: "portal";
+      target: () => Element;
+      children: () => SxNode;
+    }
+  | {
+      kind: "error";
+      children: () => SxNode;
+      fallback: (err: unknown, reset: () => void) => SxNode;
     };
 
 export type EventHandler = (event: unknown) => void;

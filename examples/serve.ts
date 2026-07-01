@@ -45,6 +45,7 @@ ${css}
 </html>`;
 
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: opts.port,
     fetch(req) {
       const url = new URL(req.url);

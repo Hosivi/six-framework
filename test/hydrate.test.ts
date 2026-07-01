@@ -3,7 +3,7 @@
 import { test, expect } from "bun:test";
 import { createRoot, signal } from "../src/reactive/index";
 import { div, ul, li, span } from "../src/dom/tags";
-import { when, each } from "../src/dom/control";
+import { when, each, match, errorBoundary } from "../src/dom/control";
 import { hydrate } from "../src/dom/hydrate";
 
 // Simulate the SSR → client cycle: render to HTML, inject into a DOM node, hydrate.
@@ -101,6 +101,21 @@ test("hydrates an each() region — existing items preserved, keyed updates work
   expect(host.querySelectorAll("li")[0].textContent).toBe("B");
 });
 
+test("hydrates an each() region and replaces stale same-key SSR items", () => {
+  type Item = { id: string; label: string };
+  const items = signal<Item[]>([{ id: "a", label: "SECRET" }]);
+  const App = () => ul(each(items, (item) => li(item.label), (item) => item.id));
+
+  const host = ssr(App().toHTML());
+  items.set([{ id: "a", label: "public" }]);
+
+  createRoot(() => hydrate(App(), host));
+
+  const entry = host.querySelector("li");
+  expect(entry?.textContent).toBe("public");
+  expect(host.textContent).not.toContain("SECRET");
+});
+
 test("hydrates direct sibling when() regions at their original position", () => {
   const show = signal(false);
   const App = () => div([span("before"), when(() => show(), () => span("yes")), span("after")]);
@@ -162,14 +177,178 @@ test("hydrates empty direct sibling each() regions before later population", () 
   ]);
 });
 
+test("hydrates a match() region without duplicating same-state SSR content", () => {
+  const isSecret = signal(true);
+  const App = () =>
+    div([
+      span("before"),
+      match(
+        [
+          [() => isSecret(), () => span("SECRET")],
+        ],
+        () => span("public"),
+      ),
+      span("after"),
+    ]);
+
+  const host = ssr(App().toHTML());
+  const existingSecret = host.querySelectorAll("span")[1]!;
+
+  createRoot(() => hydrate(App(), host));
+
+  const spans = Array.from(host.querySelectorAll("span"));
+  expect(spans.map((child) => child.textContent)).toEqual(["before", "SECRET", "after"]);
+  expect(spans[1]).toBe(existingSecret);
+});
+
+test("hydrates a match() region and removes stale SSR content on client mismatch", () => {
+  const isSecret = signal(true);
+  const App = () =>
+    div([
+      span("before"),
+      match(
+        [
+          [() => isSecret(), () => span("SECRET")],
+        ],
+        () => span("public"),
+      ),
+      span("after"),
+    ]);
+
+  const host = ssr(App().toHTML());
+  isSecret.set(false);
+
+  createRoot(() => hydrate(App(), host));
+
+  expect(Array.from(host.querySelectorAll("span")).map((child) => child.textContent)).toEqual([
+    "before",
+    "public",
+    "after",
+  ]);
+  expect(host.textContent).not.toContain("SECRET");
+});
+
+test("hydrates an empty match() sibling region at its original position", () => {
+  const show = signal(false);
+  const App = () =>
+    div([
+      span("before"),
+      match([
+        [() => show(), () => span("yes")],
+      ]),
+      span("after"),
+    ]);
+
+  const host = ssr(App().toHTML());
+  createRoot(() => hydrate(App(), host));
+  const root = host.querySelector("div")!;
+
+  expect(Array.from(root.children).map((child) => child.textContent)).toEqual(["before", "after"]);
+
+  show.set(true);
+  expect(Array.from(root.children).map((child) => child.textContent)).toEqual([
+    "before",
+    "yes",
+    "after",
+  ]);
+});
+
+test("hydrates an errorBoundary() region without duplicating same-state SSR content", () => {
+  const shouldThrow = signal(false);
+  const App = () =>
+    div([
+      span("before"),
+      errorBoundary(
+        () => {
+          if (shouldThrow()) throw new Error("boom");
+          return span("SECRET");
+        },
+        () => span("public"),
+      ),
+      span("after"),
+    ]);
+
+  const host = ssr(App().toHTML());
+  const existingSecret = host.querySelectorAll("span")[1]!;
+
+  createRoot(() => hydrate(App(), host));
+
+  const spans = Array.from(host.querySelectorAll("span"));
+  expect(spans.map((child) => child.textContent)).toEqual(["before", "SECRET", "after"]);
+  expect(spans[1]).toBe(existingSecret);
+});
+
+test("hydrates an errorBoundary() region and removes stale SSR content on client mismatch", () => {
+  const shouldThrow = signal(false);
+  const App = () =>
+    div([
+      span("before"),
+      errorBoundary(
+        () => {
+          if (shouldThrow()) throw new Error("boom");
+          return span("SECRET");
+        },
+        () => span("public"),
+      ),
+      span("after"),
+    ]);
+
+  const host = ssr(App().toHTML());
+  shouldThrow.set(true);
+
+  createRoot(() => hydrate(App(), host));
+
+  expect(Array.from(host.querySelectorAll("span")).map((child) => child.textContent)).toEqual([
+    "before",
+    "public",
+    "after",
+  ]);
+  expect(host.textContent).not.toContain("SECRET");
+});
+
 test("falls back to fresh render on tag mismatch", () => {
   const host = document.createElement("div");
   host.innerHTML = "<section>old</section>"; // descriptor says <div>
 
   createRoot(() => hydrate(div("new"), host));
 
-  // Mismatch: hydrate inserts a fresh <div> (the stale <section> remains).
+  // Mismatch: hydrate replaces the stale SSR subtree.
   expect(host.querySelector("div")?.textContent).toBe("new");
+  expect(host.querySelector("section")).toBeNull();
+  expect(host.textContent).toBe("new");
+});
+
+test("hydrates same-tag roots by replacing stale text and removing extra children", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><span>SECRET</span><section>SECRET</section></div>`;
+
+  createRoot(() => hydrate(div([span("public")]), host));
+
+  const root = host.querySelector("div")!;
+  expect(root.innerHTML).toBe(`<span>public</span>`);
+  expect(root.textContent).toBe("public");
+  expect(root.querySelector("section")).toBeNull();
+});
+
+test("hydrates nested same-tag elements by replacing stale text", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><span>SECRET</span></div>`;
+
+  createRoot(() => hydrate(div([span("public")]), host));
+
+  expect(host.querySelector("span")?.textContent).toBe("public");
+  expect(host.textContent).toBe("public");
+});
+
+test("hydrates by removing extra stale root siblings", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><span>public</span></div><span id="stale">SECRET</span>`;
+
+  createRoot(() => hydrate(div([span("public")]), host));
+
+  expect(host.querySelector("#stale")).toBeNull();
+  expect(host.children).toHaveLength(1);
+  expect(host.textContent).toBe("public");
 });
 
 test("SSR output contains hydration markers", () => {
@@ -183,4 +362,12 @@ test("SSR output contains hydration markers", () => {
   expect(listHtml).toContain("<!--sx:e-->");
   expect(listHtml).toContain("<!--sx:i:0-->");
   expect(listHtml).toContain("<!--/sx:e-->");
+
+  const matchHtml = div(match([[() => true, () => span("x")]])).toHTML();
+  expect(matchHtml).toContain("<!--sx:m-->");
+  expect(matchHtml).toContain("<!--/sx:m-->");
+
+  const boundaryHtml = div(errorBoundary(() => span("x"), () => span("fallback"))).toHTML();
+  expect(boundaryHtml).toContain("<!--sx:r-->");
+  expect(boundaryHtml).toContain("<!--/sx:r-->");
 });

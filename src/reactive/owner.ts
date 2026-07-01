@@ -21,7 +21,7 @@ import {
  *   dispose(); // unsubscribes everything
  */
 export function createRoot<T>(fn: (dispose: Dispose) => T): T {
-  const owner: Owner = { owned: null, cleanups: null, owner: getOwner() };
+  const owner: Owner = { owned: null, cleanups: null, owner: getOwner(), context: null };
   const prevOwner = getOwner();
   const prevObserver = getObserver();
   setOwner(owner);

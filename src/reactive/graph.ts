@@ -20,6 +20,7 @@ export interface Owner {
   owned: Computation[] | null; // child computations created during this scope's run
   cleanups: Array<() => void> | null; // onCleanup callbacks
   owner: Owner | null; // parent scope
+  context: Record<symbol, unknown> | null; // context values provided at this scope
 }
 
 export interface ObservableNode {
@@ -43,6 +44,21 @@ export interface Computation<T = unknown> extends Owner, ObservableNode {
 }
 
 export type Source = SignalState | Computation;
+
+// ---- devtools instrumentation (opt-in, zero-cost when disabled) ----
+// A single nullable hook is the ONLY tax the hot path pays when devtools is off:
+// one `!== null` comparison per instrumented point. No allocation, no branching
+// cost beyond that. The hook layer (src/devtools) installs itself here.
+export interface DevtoolsHook {
+  onSignalCreate?: (node: SignalState) => void;
+  onSignalWrite?: (node: SignalState, next: unknown, prev: unknown) => void;
+  onComputationCreate?: (node: Computation) => void;
+  onComputationRun?: (node: Computation) => void;
+}
+let devtoolsHook: DevtoolsHook | null = null;
+export function setDevtoolsHook(hook: DevtoolsHook | null): void {
+  devtoolsHook = hook;
+}
 
 // ---- shared mutable context ----
 let Listener: Computation | null = null; // who is reading right now
@@ -113,7 +129,9 @@ export function createSignalState<T>(
   equals: ((a: T, b: T) => boolean) | false,
   name?: string,
 ): SignalState<T> {
-  return { value, observers: null, equals, name };
+  const node: SignalState<T> = { value, observers: null, equals, name };
+  if (devtoolsHook !== null) devtoolsHook.onSignalCreate?.(node as SignalState);
+  return node;
 }
 
 export function readSignal<T>(node: SignalState<T>): T {
@@ -123,7 +141,9 @@ export function readSignal<T>(node: SignalState<T>): T {
 
 export function writeSignal<T>(node: SignalState<T>, value: T): T {
   if (node.equals !== false && node.equals(node.value, value)) return node.value;
+  const prev = node.value;
   node.value = value;
+  if (devtoolsHook !== null) devtoolsHook.onSignalWrite?.(node as SignalState, value, prev);
   if (node.observers !== null) {
     for (const obs of [...node.observers]) markStale(obs, DIRTY);
   }
@@ -148,11 +168,13 @@ export function createComputation<T>(
     owned: null,
     cleanups: null,
     owner: CurrentOwner,
+    context: null,
     pure,
     equals,
     name,
   };
   if (CurrentOwner !== null) (CurrentOwner.owned ??= []).push(node as Computation);
+  if (devtoolsHook !== null) devtoolsHook.onComputationCreate?.(node as Computation);
   return node;
 }
 
@@ -198,6 +220,7 @@ function updateIfNecessary(node: Computation): void {
 }
 
 function updateComputation(node: Computation): void {
+  if (devtoolsHook !== null) devtoolsHook.onComputationRun?.(node);
   disposeNode(node, false); // run cleanups, drop old deps/children before re-run
   const prevListener = Listener;
   const prevOwner = CurrentOwner;

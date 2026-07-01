@@ -16,7 +16,7 @@ import type {
 import { render } from "./render";
 import { encodeHydrationKey, escapeHTML, sanitizeAttributeValue } from "./security";
 
-const VOID_ELEMENTS = new Set([
+export const VOID_ELEMENTS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input",
   "link", "meta", "source", "track", "wbr",
 ]);
@@ -120,7 +120,7 @@ interface Collected {
 }
 
 /** Flatten props + modifiers into the final attribute map (class first). */
-const collect = (node: SxNode): Collected => {
+export const collect = (node: SxNode): Collected => {
   const rest: Record<string, string> = {};
   const classes: string[] = [];
   const styles: string[] = [];
@@ -168,24 +168,42 @@ const collect = (node: SxNode): Collected => {
   return { attrs, text };
 };
 
-const serializeChild = (child: SxChild): string => {
+export const serializeChild = (child: SxChild): string => {
   if (child === null || child === undefined || child === false || child === true) {
     return "";
   }
   if (typeof child === "function") return serializeChild(child());
   if (Array.isArray(child)) return child.map(serializeChild).join("");
   if (isDynamicChild(child)) {
+    const wrapRegion = (open: string, close: string, branch?: SxNode): string =>
+      `<!--${open}-->${branch ? serialize(branch) : ""}<!--${close}-->`;
     if (child.kind === "when") {
       const branch = child.condition() ? child.truthy() : child.falsy?.();
       // Wrap in markers so the client hydrator can find the region boundary.
-      return `<!--sx:w-->${branch ? serialize(branch) : ""}<!--/sx:w-->`;
+      return wrapRegion("sx:w", "/sx:w", branch);
     }
-    // Each item is preceded by <!--sx:i:KEY--> so the hydrator can adopt existing nodes.
-    const parts = child.items().map((item, i) => {
-      const k = encodeHydrationKey(String(child.key(item, i)));
-      return `<!--sx:i:${k}-->${serialize(child.renderItem(item, i))}`;
-    });
-    return `<!--sx:e-->${parts.join("")}<!--/sx:e-->`;
+    if (child.kind === "each") {
+      // Each item is preceded by <!--sx:i:KEY--> so the hydrator can adopt existing nodes.
+      const parts = child.items().map((item, i) => {
+        const k = encodeHydrationKey(String(child.key(item, i)));
+        return `<!--sx:i:${k}-->${serialize(child.renderItem(item, i))}`;
+      });
+      return `<!--sx:e-->${parts.join("")}<!--/sx:e-->`;
+    }
+    if (child.kind === "match") {
+      const active = child.cases.find(([cond]) => cond());
+      const branch = active ? active[1]() : child.fallback?.();
+      return wrapRegion("sx:m", "/sx:m", branch);
+    }
+    if (child.kind === "portal") return "";
+    if (child.kind === "error") {
+      try {
+        return wrapRegion("sx:r", "/sx:r", child.children());
+      } catch (err) {
+        return wrapRegion("sx:r", "/sx:r", child.fallback(err, () => {}));
+      }
+    }
+    return "";
   }
   // Trusted escape hatch: raw DOM nodes serialize via outerHTML for composition.
   // Do not pass user-authored DOM here unless it has already been sanitized.
@@ -197,7 +215,7 @@ const serializeChild = (child: SxChild): string => {
   return escapeHTML(child);
 };
 
-const serializeAttrs = (attrs: Record<string, string>): string =>
+export const serializeAttrs = (attrs: Record<string, string>): string =>
   Object.entries(attrs)
     .map(([k, v]) => (v === "" ? ` ${k}` : ` ${k}="${escapeHTML(v)}"`))
     .join("");
@@ -231,9 +249,20 @@ const collectJSONChildren = (
     if (child.kind === "when") {
       const branch = child.condition() ? child.truthy() : child.falsy?.();
       if (branch) out.push(toJSON(branch));
-    } else {
+    } else if (child.kind === "each") {
       child.items().forEach((item, i) => out.push(toJSON(child.renderItem(item, i))));
+    } else if (child.kind === "match") {
+      const active = child.cases.find(([cond]) => cond());
+      const branch = active ? active[1]() : child.fallback?.();
+      if (branch) out.push(toJSON(branch));
+    } else if (child.kind === "error") {
+      try {
+        out.push(toJSON(child.children()));
+      } catch {
+        // silently skip on error in JSON serialization
+      }
     }
+    // portal: no JSON contribution
     return;
   }
   if (isSxNode(child)) {

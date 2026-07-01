@@ -62,6 +62,13 @@ export const applyProps = (el: Element, props: HtmlProps): void => {
   }
 };
 
+export const removeUndeclaredAttributes = (el: Element, props: HtmlProps): void => {
+  const declared = new Set(Object.keys(props));
+  for (const name of el.getAttributeNames()) {
+    if (!declared.has(name)) el.removeAttribute(name);
+  }
+};
+
 /** Returns true if a `text` modifier owns the element's content. */
 export const applyModifiers = (el: HTMLElement, modifiers: Modifier[]): boolean => {
   const classMods = modifiers.filter(
@@ -204,6 +211,73 @@ const mountEach = (
   });
 };
 
+const mountMatch = (
+  child: Extract<DynamicChild, { kind: "match" }>,
+  parent: Node,
+): void => {
+  const anchor = document.createComment("match");
+  parent.appendChild(anchor);
+  effect(() => {
+    const active = child.cases.find(([cond]) => cond());
+    untrack(() => {
+      const branch = active ? active[1]() : child.fallback?.();
+      const el = branch ? buildElement(branch) : null;
+      if (el) parent.insertBefore(el, anchor);
+      onCleanup(() => el?.remove());
+    });
+  });
+};
+
+const mountPortal = (
+  child: Extract<DynamicChild, { kind: "portal" }>,
+): void => {
+  const target = child.target();
+  const dispose = createRoot((d) => {
+    const el = buildElement(child.children());
+    target.appendChild(el);
+    onCleanup(() => el.remove());
+    return d;
+  });
+  onCleanup(dispose);
+};
+
+const mountError = (
+  child: Extract<DynamicChild, { kind: "error" }>,
+  parent: Node,
+): void => {
+  let disposeChild: (() => void) | null = null;
+
+  const renderFallback = (err: unknown): void => {
+    disposeChild = createRoot((d) => {
+      const reset = (): void => {
+        disposeChild?.();
+        disposeChild = null;
+        renderChildren();
+      };
+      const el = buildElement(child.fallback(err, reset));
+      parent.appendChild(el);
+      onCleanup(() => el.remove());
+      return d;
+    });
+  };
+
+  const renderChildren = (): void => {
+    try {
+      disposeChild = createRoot((d) => {
+        const el = buildElement(child.children());
+        parent.appendChild(el);
+        onCleanup(() => el.remove());
+        return d;
+      });
+    } catch (err) {
+      renderFallback(err);
+    }
+  };
+
+  renderChildren();
+  onCleanup(() => disposeChild?.());
+};
+
 // ---- children ----
 
 const mountChild = (child: SxChild, parent: Node): void => {
@@ -211,7 +285,10 @@ const mountChild = (child: SxChild, parent: Node): void => {
 
   if (isDynamicChild(child)) {
     if (child.kind === "when") mountWhen(child, parent);
-    else mountEach(child, parent);
+    else if (child.kind === "each") mountEach(child, parent);
+    else if (child.kind === "match") mountMatch(child, parent);
+    else if (child.kind === "portal") mountPortal(child);
+    else if (child.kind === "error") mountError(child, parent);
     return;
   }
 

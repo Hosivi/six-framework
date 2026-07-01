@@ -16,6 +16,7 @@ const registry = (): Registry => {
 /**
  * Register one scoped rule under `id`. Idempotent: the same id is injected once.
  * Browser → a <style> in <head>; SSR (no document) → the collectible registry.
+ * Trusted-code API: pass only framework-generated or otherwise trusted CSS.
  */
 export const registerStyle = (id: string, css: string): void => {
   if (typeof document !== "undefined") {

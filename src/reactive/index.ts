@@ -7,6 +7,9 @@ export { effect } from "./effect";
 export { batch } from "./batch";
 export { untrack } from "./untrack";
 export { createRoot, onCleanup } from "./owner";
+export { onMount } from "./mount";
+export { createContext, provide, useContext } from "./context";
+export type { Context } from "./context";
 
 export type {
   Accessor,

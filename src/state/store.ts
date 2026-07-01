@@ -54,6 +54,34 @@ export type Store<
   hydrate(patch: Partial<S>): void;
 };
 
+// ---- store devtools instrumentation (opt-in, zero-cost when disabled) ----
+// Same single-nullable-hook pattern as the reactive core (src/reactive/graph.ts):
+// the ONLY tax when devtools is off is a `!== null` check per action dispatch and
+// once at store creation. The store-devtools layer (src/devtools) installs itself
+// here. six's createStore is already Redux-shaped, so this exposes exactly what a
+// time-travel tool needs: an id/name, the state, and a hydrate to jump in time.
+export interface StoreDevtoolsHook {
+  onStoreCreate?: (meta: {
+    id: number;
+    name: string;
+    state: Record<string, unknown>;
+    hydrate: (patch: Record<string, unknown>) => void; // lets a tool time-travel this store
+  }) => void;
+  onAction?: (event: {
+    id: number;
+    name: string;
+    action: string;
+    payload: unknown;
+    patch: Record<string, unknown> | undefined;
+    state: Record<string, unknown>; // full state AFTER applying the patch
+  }) => void;
+}
+let storeDevtoolsHook: StoreDevtoolsHook | null = null;
+export function setStoreDevtoolsHook(hook: StoreDevtoolsHook | null): void {
+  storeDevtoolsHook = hook;
+}
+let storeIdCounter = 0;
+
 export function createStore<
   S extends StateShape,
   A extends Record<string, ActionDef<S>> = Record<string, never>,
@@ -62,8 +90,15 @@ export function createStore<
   state: S;
   actions?: (state: StateView<S>) => A;
   getters?: (state: StateView<S>) => G;
+  /** Optional label surfaced to devtools/time-travel tools. */
+  name?: string;
 }): Store<S, A, G> {
   const keys = Object.keys(config.state) as (keyof S)[];
+
+  // Always assigned (a trivial increment) so ids stay stable and deterministic;
+  // the real devtools work only runs when the hook is installed.
+  const storeId = ++storeIdCounter;
+  const storeName = config.name ?? `store#${storeId}`;
 
   // One signal per top-level key — this is where fine-grained reactivity comes from.
   const signals = {} as { [K in keyof S]: WritableSignal<S[K]> };
@@ -78,6 +113,14 @@ export function createStore<
       const sig = signals[k];
       if (sig) sig.set((patch as S)[k]);
     }
+  };
+
+  // Untracked read of the full current state. Shared by dehydrate() and the
+  // devtools hook so the snapshot shape stays identical in both.
+  const readSnapshot = (): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const key of keys) out[key as string] = untrack(signals[key]);
+    return out;
   };
 
   const api: Record<string, unknown> = {};
@@ -100,20 +143,40 @@ export function createStore<
     for (const name of Object.keys(defs)) {
       const fn = defs[name] as (payload?: unknown) => Partial<S> | void;
       api[name] = (payload?: unknown): void => {
-        batch(() => apply(untrack(() => fn(payload))));
+        // Same behavior as before: compute untracked, apply in one batch. The
+        // patch is captured separately only so devtools can observe it.
+        const patch = untrack(() => fn(payload));
+        batch(() => apply(patch));
+        if (storeDevtoolsHook !== null) {
+          storeDevtoolsHook.onAction?.({
+            id: storeId,
+            name: storeName,
+            action: name,
+            payload,
+            patch: (patch ?? undefined) as Record<string, unknown> | undefined,
+            state: readSnapshot(),
+          });
+        }
       };
     }
   }
 
-  api.dehydrate = (): S => {
-    const out = {} as S;
-    for (const key of keys) out[key] = untrack(signals[key]);
-    return out;
-  };
+  api.dehydrate = (): S => readSnapshot() as S;
 
   api.hydrate = (patch: Partial<S>): void => {
     batch(() => apply(patch));
   };
+
+  // Announce the store to devtools once it's fully built, handing over a hydrate
+  // closure so a time-travel tool can restore any recorded snapshot.
+  if (storeDevtoolsHook !== null) {
+    storeDevtoolsHook.onStoreCreate?.({
+      id: storeId,
+      name: storeName,
+      state: readSnapshot(),
+      hydrate: (patch) => (api.hydrate as (p: Record<string, unknown>) => void)(patch),
+    });
+  }
 
   return api as Store<S, A, G>;
 }

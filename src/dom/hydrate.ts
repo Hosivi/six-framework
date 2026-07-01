@@ -1,8 +1,11 @@
 // hydrate() — attach reactivity to server-rendered HTML (closes the isomorphic loop).
 //
-// .toHTML() embeds <!--sx:w-->...<!--/sx:w--> around when() regions and
-// <!--sx:e--><!--sx:i:KEY-->item<!--/sx:e--> for each() regions so the hydrator
-// can find existing nodes and wire effects to them — no DOM rebuild, no flash.
+// .toHTML() embeds <!--sx:w-->...<!--/sx:w--> around when() regions,
+// <!--sx:m-->...<!--/sx:m--> around match() regions,
+// <!--sx:r-->...<!--/sx:r--> around errorBoundary() regions,
+// and <!--sx:e--><!--sx:i:KEY-->item<!--/sx:e--> for each() regions so the
+// hydrator can find existing nodes and wire effects to them — no DOM rebuild,
+// no flash.
 //
 //   // server
 //   const html = App().toHTML();
@@ -11,7 +14,7 @@
 
 import { effect, createRoot, computed, untrack, onCleanup } from "../reactive/index";
 import type { SxNode, SxChild, DynamicChild } from "./types";
-import { applyProps, applyModifiers, buildElement } from "./render";
+import { applyProps, applyModifiers, buildElement, removeUndeclaredAttributes } from "./render";
 import { decodeHydrationKey } from "./security";
 
 const ELEMENT = 1;
@@ -69,13 +72,69 @@ type Cursor = ReturnType<typeof makeCursor>;
 
 /** Wire reactive bindings to an EXISTING element — never calls createElement. */
 const hydrateElement = (node: SxNode, el: HTMLElement): void => {
+  removeUndeclaredAttributes(el, node.props);
   applyProps(el, node.props);
   const hasText = applyModifiers(el, node.modifiers);
   if (!hasText) visitChildren(node.children, el);
 };
 
 const visitChildren = (children: SxChild, parent: HTMLElement): void => {
-  visit(children, parent, makeCursor(parent));
+  const cursor = makeCursor(parent);
+  visit(children, parent, cursor);
+  let stale: ChildNode | null;
+  while ((stale = cursor.advance())) stale.parentNode?.removeChild(stale);
+};
+
+type HydrationRegion = {
+  anchor: Comment;
+  branchNodes: ChildNode[];
+};
+
+const claimRegion = (
+  parent: HTMLElement,
+  cursor: Cursor,
+  openData: string,
+  closeData: string,
+  anchorData: string,
+): HydrationRegion | null => {
+  const openComment = cursor.skipComment(openData);
+  if (!openComment) return null;
+
+  const { nodes: branchNodes, close: closeComment } = cursor.collectUntilComment(closeData);
+  const anchorBefore = cursor.peek();
+
+  parent.removeChild(openComment);
+  if (closeComment) parent.removeChild(closeComment);
+
+  const anchor = document.createComment(anchorData);
+  parent.insertBefore(anchor, anchorBefore ?? null);
+
+  return { anchor, branchNodes };
+};
+
+const adoptOrDiscardRegion = (
+  branchNodes: ChildNode[],
+  branch: SxNode | undefined,
+): HTMLElement | null => {
+  const branchEl = branchNodes.find((node) => node.nodeType === ELEMENT) as
+    | HTMLElement
+    | undefined;
+
+  if (!branch) {
+    if (branchNodes.length === 0) return null;
+  } else if (
+    branchEl &&
+    branchEl.tagName.toLowerCase() === branch.tag &&
+    branchNodes.length === 1
+  ) {
+    // Tag matches — adopt it; hydrateElement reconciles attrs/text/children.
+    // (A byte-exact outerHTML===serialize() gate would wrongly reject void
+    // elements and escaped text, degrading adoption to a full rebuild.)
+    return branchEl;
+  }
+
+  for (const node of branchNodes) node.parentNode?.removeChild(node);
+  return null;
 };
 
 const visit = (child: SxChild, parent: HTMLElement, cursor: Cursor): void => {
@@ -87,8 +146,14 @@ const visit = (child: SxChild, parent: HTMLElement, cursor: Cursor): void => {
   }
 
   if (typeof child === "string" || typeof child === "number") {
-    // Static text — consume the text node, no effect needed.
-    if (cursor.peek()?.nodeType === TEXT) cursor.advance();
+    const nextText = String(child);
+    const n = cursor.peek();
+    if (n?.nodeType === TEXT) {
+      const textNode = cursor.advance() as Text;
+      if (textNode.data !== nextText) textNode.data = nextText;
+    } else {
+      parent.insertBefore(document.createTextNode(nextText), n ?? null);
+    }
     return;
   }
 
@@ -113,7 +178,10 @@ const visit = (child: SxChild, parent: HTMLElement, cursor: Cursor): void => {
 
   if (isDynamic(child)) {
     if (child.kind === "when") hydrateWhen(child, parent, cursor);
-    else hydrateEach(child, parent, cursor);
+    else if (child.kind === "each") hydrateEach(child, parent, cursor);
+    else if (child.kind === "match") hydrateMatch(child, parent, cursor);
+    else if (child.kind === "portal") hydratePortal(child);
+    else if (child.kind === "error") hydrateError(child, parent, cursor);
     return;
   }
 
@@ -123,9 +191,15 @@ const visit = (child: SxChild, parent: HTMLElement, cursor: Cursor): void => {
       cursor.advance();
       hydrateElement(child, n as HTMLElement);
     } else {
-      // Tag mismatch — build fresh and insert before the next DOM node.
+      // Tag mismatch (server/client divergence) — client wins: build fresh in
+      // place, and consume+discard the stale SSR node so the cursor stays
+      // aligned for the following siblings (otherwise one mismatch cascades).
       const newEl = buildElement(child);
       parent.insertBefore(newEl, n ?? null);
+      if (n) {
+        cursor.advance();
+        parent.removeChild(n);
+      }
     }
     return;
   }
@@ -141,25 +215,13 @@ const hydrateWhen = (
   parent: HTMLElement,
   cursor: Cursor,
 ): void => {
-  const openComment = cursor.skipComment("sx:w");
+  const region = claimRegion(parent, cursor, "sx:w", "/sx:w", "when");
 
-  if (!openComment) {
+  if (!region) {
     // No SSR marker — fresh reactive region.
     freshWhen(child, parent, cursor.peek());
     return;
   }
-
-  const { nodes: branchNodes, close: closeComment } = cursor.collectUntilComment("/sx:w");
-  const anchorBefore =
-    closeComment ??
-    branchNodes[branchNodes.length - 1]?.nextSibling ??
-    openComment.nextSibling;
-
-  // Replace the sx:w / /sx:w comments with a stable region anchor.
-  parent.removeChild(openComment);
-  const anchor = document.createComment("when");
-  parent.insertBefore(anchor, anchorBefore);
-  if (closeComment) parent.removeChild(closeComment);
 
   const visible = computed(() => child.condition());
   let firstRun = true;
@@ -169,28 +231,23 @@ const hydrateWhen = (
     untrack(() => {
       if (firstRun) {
         firstRun = false;
-        const branchEl = branchNodes.find((n) => n.nodeType === ELEMENT) as
-          | HTMLElement
-          | undefined;
-        if (show && branchEl) {
-          const desc = child.truthy();
-          if (branchEl.tagName.toLowerCase() === desc.tag) {
-            // SSR matches — hydrate in place (wire internal reactivity).
-            hydrateElement(desc, branchEl);
-            onCleanup(() => branchEl.remove());
-            return;
-          }
-        } else if (!show && !branchEl) {
+        const desc = show ? child.truthy() : child.falsy?.();
+        const branchEl = adoptOrDiscardRegion(region.branchNodes, desc);
+        if (desc && branchEl) {
+          // SSR matches — hydrate in place (wire internal reactivity).
+          hydrateElement(desc, branchEl);
+          onCleanup(() => branchEl.remove());
+          return;
+        }
+        if (!desc && region.branchNodes.length === 0) {
           // SSR was empty and condition is still false — nothing to do.
           return;
         }
-        // Mismatch: discard stale SSR content, fall through to fresh build.
-        for (const n of branchNodes) n.parentNode?.removeChild(n);
       }
       // Normal reactive update (runs after first flip too).
       const branch = show ? child.truthy() : child.falsy?.();
       const el = branch ? buildElement(branch) : null;
-      if (el) parent.insertBefore(el, anchor);
+      if (el) parent.insertBefore(el, region.anchor);
       onCleanup(() => el?.remove());
     });
   });
@@ -256,11 +313,17 @@ const hydrateEach = (
         const dispose =
           idx >= 0
             ? createRoot((d) => {
-                hydrateElement(child.renderItem(list[idx], idx), itemEl);
+                const descriptor = child.renderItem(list[idx], idx);
+                if (itemEl.tagName.toLowerCase() !== descriptor.tag) {
+                  itemEl.remove();
+                  return () => {};
+                }
+                hydrateElement(descriptor, itemEl);
                 return d;
               })
             : () => {};
-        prev.set(actualKey, { el: itemEl, dispose });
+        if (idx >= 0 && itemEl.parentNode === parent) prev.set(actualKey, { el: itemEl, dispose });
+        else itemEl.remove();
         pendingRawKey = null;
       }
     }
@@ -311,6 +374,108 @@ const hydrateEach = (
   });
 };
 
+// ---- match ----------------------------------------------------------------
+
+const hydrateMatch = (
+  child: Extract<DynamicChild, { kind: "match" }>,
+  parent: HTMLElement,
+  cursor: Cursor,
+): void => {
+  const region = claimRegion(parent, cursor, "sx:m", "/sx:m", "match");
+  const anchor = region?.anchor ?? document.createComment("match");
+  if (!region) parent.insertBefore(anchor, cursor.peek() ?? null);
+
+  let firstRun = true;
+  effect(() => {
+    const active = child.cases.find(([cond]) => cond());
+    untrack(() => {
+      const branch = active ? active[1]() : child.fallback?.();
+      if (firstRun) {
+        firstRun = false;
+        if (region) {
+          const branchEl = adoptOrDiscardRegion(region.branchNodes, branch);
+          if (branch && branchEl) {
+            hydrateElement(branch, branchEl);
+            onCleanup(() => branchEl.remove());
+            return;
+          }
+          if (!branch && region.branchNodes.length === 0) return;
+        }
+      }
+      const el = branch ? buildElement(branch) : null;
+      if (el) parent.insertBefore(el, anchor);
+      onCleanup(() => el?.remove());
+    });
+  });
+};
+
+// ---- portal ---------------------------------------------------------------
+
+const hydratePortal = (child: Extract<DynamicChild, { kind: "portal" }>): void => {
+  // portals have no SSR footprint — mount fresh
+  const target = child.target();
+  const dispose = createRoot((d) => {
+    const el = buildElement(child.children());
+    target.appendChild(el);
+    onCleanup(() => el.remove());
+    return d;
+  });
+  onCleanup(dispose);
+};
+
+// ---- error boundary -------------------------------------------------------
+
+const hydrateError = (
+  child: Extract<DynamicChild, { kind: "error" }>,
+  parent: HTMLElement,
+  cursor: Cursor,
+): void => {
+  let disposeChild: (() => void) | null = null;
+  const region = claimRegion(parent, cursor, "sx:r", "/sx:r", "error");
+  const anchor = region?.anchor ?? document.createComment("error");
+  if (!region) parent.insertBefore(anchor, cursor.peek() ?? null);
+  let firstMount = true;
+
+  const mountBranch = (branch: SxNode): void => {
+    disposeChild = createRoot((d) => {
+      const adopted = firstMount && region ? adoptOrDiscardRegion(region.branchNodes, branch) : null;
+      let el: HTMLElement;
+
+      if (adopted) {
+        el = adopted;
+        hydrateElement(branch, el);
+      } else {
+        el = buildElement(branch);
+        parent.insertBefore(el, anchor);
+      }
+
+      firstMount = false;
+      onCleanup(() => el.remove());
+      return d;
+    });
+  };
+
+  const renderFallback = (err: unknown): void => {
+    const reset = (): void => {
+      disposeChild?.();
+      disposeChild = null;
+      renderChildren();
+    };
+    mountBranch(child.fallback(err, reset));
+  };
+
+  const renderChildren = (): void => {
+    try {
+      mountBranch(child.children());
+    } catch (err) {
+      renderFallback(err);
+    }
+  };
+
+  renderChildren();
+  onCleanup(() => disposeChild?.());
+};
+
 // ---- public API -----------------------------------------------------------
 
 /**
@@ -323,11 +488,18 @@ export const hydrate = (node: SxNode, target: Element): (() => void) => {
   let el: HTMLElement | null = null;
   const dispose = createRoot((disposeRoot) => {
     const existing = target.firstElementChild as HTMLElement | null;
-    if (existing && existing.tagName.toLowerCase() === node.tag) {
+    const hasSingleRootChild =
+      target.childElementCount === 1 && target.firstElementChild === existing && target.children.length === 1;
+    if (
+      existing &&
+      existing.tagName.toLowerCase() === node.tag &&
+      hasSingleRootChild
+    ) {
       el = existing;
       hydrateElement(node, el);
     } else {
-      // No SSR child or tag mismatch — fall back to a fresh render.
+      // No SSR child or tag mismatch — replace stale SSR content with a fresh render.
+      while (target.firstChild) target.removeChild(target.firstChild);
       el = buildElement(node);
       target.appendChild(el);
     }

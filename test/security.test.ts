@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { signal } from "../src/reactive/index";
+import { createRoot, signal } from "../src/reactive/index";
 import { a, button, div, el, img, li, span, ul } from "../src/dom/tags";
 import { each } from "../src/dom/control";
 import { hydrate } from "../src/dom/hydrate";
@@ -196,4 +196,15 @@ test("explicit event APIs still work", () => {
   host.querySelectorAll("button")[1].click();
 
   expect(count()).toBe(2);
+});
+
+test("hydrate removes unsafe stale URL attributes during same-tag adoption", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><a href="javascript:alert(1)">click</a></div>`;
+
+  createRoot(() => hydrate(div([a("click")]), host));
+
+  const link = host.querySelector("a")!;
+  expect(link.getAttribute("href")).toBeNull();
+  expect(host.textContent).toBe("click");
 });
