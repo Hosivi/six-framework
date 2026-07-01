@@ -258,8 +258,9 @@ const collectJSONChildren = (
     } else if (child.kind === "error") {
       try {
         out.push(toJSON(child.children()));
-      } catch {
-        // silently skip on error in JSON serialization
+      } catch (err) {
+        // Match serializeChild: render the fallback so HTML and JSON agree.
+        out.push(toJSON(child.fallback(err, () => {})));
       }
     }
     // portal: no JSON contribution

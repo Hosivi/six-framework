@@ -34,4 +34,29 @@ export function createRoot<T>(fn: (dispose: Dispose) => T): T {
   }
 }
 
-export { onCleanup } from "./graph";
+/**
+ * Run `fn` under a captured `owner`, then restore the previous owner. This is
+ * the escape hatch for DEFERRED code — event handlers, timers, promises — that
+ * needs to resolve context (`useContext`/`useStore`) or register cleanups after
+ * the synchronous component/provider scope has already been left.
+ *
+ *   const owner = getOwner();               // capture during component build
+ *   button.onClick(() => runWithOwner(owner, () => useStore(CartCtx).add()));
+ *
+ * Tracking is detached (like a root), so reads inside `fn` don't subscribe the
+ * outer computation.
+ */
+export function runWithOwner<T>(owner: Owner | null, fn: () => T): T {
+  const prevOwner = getOwner();
+  const prevObserver = getObserver();
+  setOwner(owner);
+  setObserver(null);
+  try {
+    return fn();
+  } finally {
+    setOwner(prevOwner);
+    setObserver(prevObserver);
+  }
+}
+
+export { getOwner, onCleanup } from "./graph";

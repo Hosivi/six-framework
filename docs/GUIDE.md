@@ -184,6 +184,28 @@ provide(Theme, "dark", () => {
 
 `useContext` returns the nearest provided value, or the context's default.
 
+### Deferred resolution — `getOwner` / `runWithOwner`
+
+`useContext`/`useStore` resolve by walking the owner chain, which works during a
+component's synchronous build and inside effects (an effect restores its owner
+when it runs). But **deferred** code — an event handler, a `setTimeout`, a
+`.then()` — runs with no active owner, so a bare `useStore()` there sees only the
+default. Capture the owner during build and re-enter it:
+
+```ts
+const Cart = () => {
+  const owner = getOwner();                    // capture during build (sync)
+  return button("Add").onClick(() =>
+    runWithOwner(owner, () => useStore(CartCtx).add("☕")),
+  );
+};
+```
+
+In practice you usually resolve the store once at the top of the component and
+close over it — `const cart = useStore(CartCtx)` — and the handler just uses
+`cart`. `runWithOwner` is the escape hatch for when you genuinely must resolve
+lazily.
+
 ---
 
 ## 5. Building DOM — tags & the fluent builder
@@ -594,6 +616,11 @@ dt.disable();
   the extension bridge is purely additive and SSR-safe (`typeof window` guarded).
 - **Zero-cost when off** — the store hot path pays one `!== null` check.
 
+> **Call `enableStoreDevtools()` before creating your stores.** The hook only
+> sees stores created after it is installed (retaining every store to register
+> them retroactively would leak). Stores sharing a `name` are auto-disambiguated
+> in the panel, and an extension injected *after* enable still bridges new stores.
+
 ---
 
 ## 15. HMR — design & status
@@ -662,6 +689,6 @@ App().into(document.getElementById("root")!);
 ---
 
 *Every API in this guide is verified against the current source. The framework
-ships 214 passing tests across the reactive core, DOM runtime, control flow,
+ships 227 passing tests across the reactive core, DOM runtime, control flow,
 async, state, messaging, CSS, router, SSR/hydration, streaming, graph devtools,
 and Redux-style store time-travel.*

@@ -117,8 +117,8 @@ export function enableStoreDevtools(options?: StoreDevtoolsOptions): StoreDevtoo
   const connections = new Map<number, ReduxConnection>();
   const unsubscribers: Array<() => void> = [];
 
-  // Captured once at enable time; null in SSR/Node or when opted out.
-  const ext = useRedux ? getReduxExtension() : null;
+  // Panel display names must be unique so duplicate store names don't collide.
+  const usedNames = new Set<string>();
 
   const record = (action: RecordedAction): void => {
     buffer.push(action);
@@ -146,8 +146,15 @@ export function enableStoreDevtools(options?: StoreDevtoolsOptions): StoreDevtoo
         hydrate: meta.hydrate,
         initial: meta.state,
       });
+      // Re-check the extension per store: it may have been injected AFTER
+      // enableStoreDevtools() (browser extensions load asynchronously).
+      const ext = useRedux ? getReduxExtension() : null;
       if (ext !== null) {
-        const conn = ext.connect({ name: meta.name });
+        // Disambiguate duplicate names so two stores don't collide in the panel.
+        let displayName = meta.name;
+        if (usedNames.has(displayName)) displayName = `${meta.name}#${meta.id}`;
+        usedNames.add(displayName);
+        const conn = ext.connect({ name: displayName });
         connections.set(meta.id, conn);
         conn.init(meta.state);
         const unsub = conn.subscribe((message) => handleReduxMessage(meta.id, message));
