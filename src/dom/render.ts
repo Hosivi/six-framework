@@ -15,6 +15,7 @@ import type {
   EventHandler,
   DynamicChild,
 } from "./types";
+import { isBlockedAttributeName, sanitizeAttributeValue } from "./security";
 
 const isSxNode = (value: unknown): value is SxNode =>
   typeof value === "object" &&
@@ -30,6 +31,11 @@ const setAttribute = (
   key: string,
   value: string | number | boolean | null,
 ): void => {
+  if (isBlockedAttributeName(key)) {
+    if (key.match(/^[A-Za-z_:][A-Za-z0-9_.:-]*$/)) el.removeAttribute(key);
+    return;
+  }
+
   // value/checked are live PROPERTIES on form controls, not attributes.
   if (key === "value" && "value" in el) {
     (el as HTMLInputElement).value =
@@ -40,12 +46,12 @@ const setAttribute = (
     (el as HTMLInputElement).checked = value === true || value === "true";
     return;
   }
-  if (value === null || value === false) el.removeAttribute(key);
-  else if (value === true) el.setAttribute(key, "");
-  else el.setAttribute(key, String(value));
+  const attrValue = sanitizeAttributeValue(key, value, el.tagName);
+  if (attrValue === null) el.removeAttribute(key);
+  else el.setAttribute(key, attrValue);
 };
 
-const applyProps = (el: Element, props: HtmlProps): void => {
+export const applyProps = (el: Element, props: HtmlProps): void => {
   for (const [key, value] of Object.entries(props)) {
     if (typeof value === "function") {
       const read = value as () => string | number | boolean | null;
@@ -57,7 +63,7 @@ const applyProps = (el: Element, props: HtmlProps): void => {
 };
 
 /** Returns true if a `text` modifier owns the element's content. */
-const applyModifiers = (el: HTMLElement, modifiers: Modifier[]): boolean => {
+export const applyModifiers = (el: HTMLElement, modifiers: Modifier[]): boolean => {
   const classMods = modifiers.filter(
     (m): m is Extract<Modifier, { type: "class" | "addClass" }> =>
       m.type === "class" || m.type === "addClass",
@@ -89,6 +95,19 @@ const applyModifiers = (el: HTMLElement, modifiers: Modifier[]): boolean => {
       } else {
         setAttribute(el, m.key, value);
       }
+    } else if (m.type === "style") {
+      const value = m.value;
+      const name = m.name;
+      const apply = (v: string | number | null): void => {
+        if (v === null || v === "") el.style.removeProperty(name);
+        else el.style.setProperty(name, String(v));
+      };
+      if (typeof value === "function") {
+        const read = value as () => string | number | null;
+        effect(() => apply(read()));
+      } else {
+        apply(value);
+      }
     } else if (m.type === "text") {
       hasText = true;
       const value = m.value;
@@ -99,6 +118,8 @@ const applyModifiers = (el: HTMLElement, modifiers: Modifier[]): boolean => {
       const handler = m.handler as EventHandler as EventListener;
       el.addEventListener(m.event, handler);
       onCleanup(() => el.removeEventListener(m.event, handler));
+    } else if (m.type === "ref") {
+      m.callback(el);
     }
   }
 
@@ -229,7 +250,7 @@ const mountChild = (child: SxChild, parent: Node): void => {
   parent.appendChild(document.createTextNode(String(child)));
 };
 
-const buildElement = (node: SxNode): HTMLElement => {
+export const buildElement = (node: SxNode): HTMLElement => {
   const el = document.createElement(node.tag);
   applyProps(el, node.props);
   const hasText = applyModifiers(el, node.modifiers);

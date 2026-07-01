@@ -5,6 +5,12 @@
 // ONLY at the dynamic holes. These helpers are that runtime. Browser-only.
 
 import { effect, onCleanup } from "../reactive/index";
+import {
+  isBlockedPropertyName,
+  sanitizeAttributeValue,
+  sanitizeUrlPropertyValue,
+  urlAttributeForProperty,
+} from "./security";
 
 /**
  * Build a cloneable template from static HTML — parsed ONCE, then cloned per
@@ -93,9 +99,9 @@ export const bindAttr = (
   accessor: () => string | number | boolean | null,
 ): void => {
   effect(() => {
-    const value = accessor();
-    if (value === null || value === false) el.removeAttribute(name);
-    else el.setAttribute(name, value === true ? "" : String(value));
+    const value = sanitizeAttributeValue(name, accessor(), el.tagName);
+    if (value === null) el.removeAttribute(name);
+    else el.setAttribute(name, value);
   });
 };
 
@@ -104,14 +110,31 @@ export const bindAttr = (
  * Unlike an attribute, a property survives user interaction — essential for
  * controlled inputs, where `setAttribute("value", …)` would not update the
  * visible value once the user has typed.
+ * Unsafe DOM sinks and event properties are ignored; use @event for listeners.
  */
 export const bindProp = (
   el: Element,
   name: string,
   accessor: () => unknown,
 ): void => {
+  if (isBlockedPropertyName(name)) return;
   effect(() => {
-    (el as unknown as Record<string, unknown>)[name] = accessor();
+    const value = accessor();
+    const urlAttrName = urlAttributeForProperty(name);
+    if (urlAttrName !== null) {
+      const sanitizedUrl = sanitizeUrlPropertyValue(name, value, el.tagName);
+      if (sanitizedUrl === null) {
+        el.removeAttribute(urlAttrName);
+        return;
+      }
+
+      if (sanitizedUrl !== undefined) {
+        (el as unknown as Record<string, unknown>)[name] = sanitizedUrl.value;
+        return;
+      }
+    }
+
+    (el as unknown as Record<string, unknown>)[name] = value;
   });
 };
 

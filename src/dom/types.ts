@@ -16,6 +16,7 @@ export type SxChild =
   | undefined
   | SxNode
   | DynamicChild
+  /** Trusted raw DOM composition escape hatch; sanitize user-authored DOM first. */
   | Node
   | (() => SxChild)
   | SxChild[];
@@ -43,6 +44,8 @@ export type Modifier =
   | { type: "class"; value: Reactive<string> }
   | { type: "addClass"; name: string; when: () => boolean }
   | { type: "attr"; key: string; value: Reactive<string | number | boolean | null> }
+  | { type: "style"; name: string; value: Reactive<string | number | null> }
+  | { type: "ref"; callback: (el: HTMLElement) => void }
   | { type: "text"; value: Reactive<string | number> }
   | { type: "on"; event: string; handler: EventHandler };
 
@@ -61,6 +64,14 @@ export interface SxNode {
   class(value: Reactive<string>): SxNode;
   addClass(name: string, when: () => boolean): SxNode;
   attr(key: string, value: Reactive<string | number | boolean | null>): SxNode;
+  /** Set a single CSS property (kebab-case), static or reactive. `null` removes it. */
+  style(name: string, value: Reactive<string | number | null>): SxNode;
+  /**
+   * Capture the live DOM element on mount.
+   * The callback fires synchronously during buildElement (before onMount).
+   * SSR: silently ignored — no DOM exists.
+   */
+  ref(callback: (el: HTMLElement) => void): SxNode;
   id(value: string): SxNode;
   text(value: Reactive<string | number>): SxNode;
   on(event: string, handler: EventHandler): SxNode;

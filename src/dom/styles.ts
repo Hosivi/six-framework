@@ -1,8 +1,10 @@
-// SSR style collection (runtime-neutral — only touches globalThis).
+// Scoped-style registry (runtime-neutral — only touches globalThis).
 //
-// The .sx compiler registers each component's scoped CSS into
-// globalThis.__SX_STYLES__ when there is no DOM (Node/SSR). These helpers read
-// that registry to inline <style> tags into a server-rendered document.
+// Both the .sx compiler and the runtime css() helper register scoped CSS here.
+// In the browser a <style> is appended to <head> (deduped by id); in Node/SSR
+// the rule is kept in globalThis.__SX_STYLES__ so collectStyles() can inline it.
+
+import { escapeHTML, escapeStyleTagContent } from "./security";
 
 type Registry = Map<string, string>;
 
@@ -11,11 +13,28 @@ const registry = (): Registry => {
   return (g.__SX_STYLES__ ??= new Map());
 };
 
+/**
+ * Register one scoped rule under `id`. Idempotent: the same id is injected once.
+ * Browser → a <style> in <head>; SSR (no document) → the collectible registry.
+ */
+export const registerStyle = (id: string, css: string): void => {
+  if (typeof document !== "undefined") {
+    if (!document.getElementById(id)) {
+      const el = document.createElement("style");
+      el.id = id;
+      el.textContent = css;
+      document.head.appendChild(el);
+    }
+    return;
+  }
+  registry().set(id, css);
+};
+
 /** All collected scoped styles as <style> tags, for the SSR <head>. */
 export const collectStyles = (): string => {
   let out = "";
   for (const [id, css] of registry()) {
-    out += `<style id="${id}">${css}</style>`;
+    out += `<style id="${escapeHTML(id)}">${escapeStyleTagContent(css)}</style>`;
   }
   return out;
 };

@@ -14,6 +14,7 @@ import type {
   EventHandler,
 } from "./types";
 import { render } from "./render";
+import { encodeHydrationKey, escapeHTML, sanitizeAttributeValue } from "./security";
 
 const VOID_ELEMENTS = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input",
@@ -23,18 +24,6 @@ const VOID_ELEMENTS = new Set([
 /** Resolve a possibly-reactive value to its current concrete value. */
 const resolve = <T>(value: Reactive<T>): T =>
   typeof value === "function" ? (value as unknown as () => T)() : value;
-
-/** HTML-escape any value. Default-safe against injection. */
-const escapeHTML = (input: unknown): string =>
-  String(input).replace(/[&<>"']/g, (ch) => {
-    switch (ch) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      default: return "&#39;";
-    }
-  });
 
 const isSxNode = (value: unknown): value is SxNode =>
   typeof value === "object" &&
@@ -75,6 +64,14 @@ export const createNode = (
     },
     attr(key, value) {
       modifiers.push({ type: "attr", key, value });
+      return node;
+    },
+    style(name, value) {
+      modifiers.push({ type: "style", name, value });
+      return node;
+    },
+    ref(callback) {
+      modifiers.push({ type: "ref", callback });
       return node;
     },
     id(value) {
@@ -126,6 +123,7 @@ interface Collected {
 const collect = (node: SxNode): Collected => {
   const rest: Record<string, string> = {};
   const classes: string[] = [];
+  const styles: string[] = [];
   let text: string | null = null;
 
   const setAttr = (key: string, value: string | number | boolean | null): void => {
@@ -134,7 +132,8 @@ const collect = (node: SxNode): Collected => {
       if (value) classes.unshift(String(value));
       return;
     }
-    rest[key] = value === true ? "" : String(value);
+    const attrValue = sanitizeAttributeValue(key, value, node.tag);
+    if (attrValue !== null) rest[key] = attrValue;
   };
 
   for (const [key, value] of Object.entries(node.props)) {
@@ -149,6 +148,9 @@ const collect = (node: SxNode): Collected => {
       if (m.when()) classes.push(m.name);
     } else if (m.type === "attr") {
       setAttr(m.key, resolve(m.value));
+    } else if (m.type === "style") {
+      const v = resolve(m.value);
+      if (v !== null && v !== "") styles.push(`${m.name}: ${v}`);
     } else if (m.type === "text") {
       text = String(resolve(m.value));
     }
@@ -158,6 +160,10 @@ const collect = (node: SxNode): Collected => {
   const attrs: Record<string, string> = {};
   if (classes.length > 0) attrs["class"] = classes.join(" ");
   Object.assign(attrs, rest);
+  if (styles.length > 0) {
+    const inline = styles.join("; ");
+    attrs["style"] = attrs["style"] ? `${attrs["style"]}; ${inline}` : inline;
+  }
 
   return { attrs, text };
 };
@@ -171,11 +177,18 @@ const serializeChild = (child: SxChild): string => {
   if (isDynamicChild(child)) {
     if (child.kind === "when") {
       const branch = child.condition() ? child.truthy() : child.falsy?.();
-      return branch ? serialize(branch) : "";
+      // Wrap in markers so the client hydrator can find the region boundary.
+      return `<!--sx:w-->${branch ? serialize(branch) : ""}<!--/sx:w-->`;
     }
-    return child.items().map((item, i) => serialize(child.renderItem(item, i))).join("");
+    // Each item is preceded by <!--sx:i:KEY--> so the hydrator can adopt existing nodes.
+    const parts = child.items().map((item, i) => {
+      const k = encodeHydrationKey(String(child.key(item, i)));
+      return `<!--sx:i:${k}-->${serialize(child.renderItem(item, i))}`;
+    });
+    return `<!--sx:e-->${parts.join("")}<!--/sx:e-->`;
   }
-  // A raw DOM node (e.g. a composed @html component): use its serialized HTML.
+  // Trusted escape hatch: raw DOM nodes serialize via outerHTML for composition.
+  // Do not pass user-authored DOM here unless it has already been sanitized.
   if (typeof child === "object" && child !== null && "nodeType" in child) {
     const node = child as { outerHTML?: string };
     return typeof node.outerHTML === "string" ? node.outerHTML : "";
