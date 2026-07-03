@@ -1,0 +1,18 @@
+# Normalize line endings for the whole repo.
+# Text files are stored as LF in the repository AND checked out as LF in the
+# working tree, regardless of each contributor's core.autocrlf setting.
+* text=auto eol=lf
+
+# Binary assets — never touch their bytes.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.pdf  binary
+*.lock binary
