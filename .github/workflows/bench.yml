@@ -1,0 +1,37 @@
+name: bench
+
+# Manual trigger — run from the Actions tab ("Run workflow"). The benchmarks are
+# read-through in the job log; nothing is committed. Linux runner, so Playwright
+# drives real Chromium (Windows blocks the debugging pipe locally).
+on:
+  workflow_dispatch:
+    inputs:
+      instances:
+        description: "instances per component for the Playwright bench"
+        default: "1000"
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Reactivity core (sx vs Solid)
+        run: bun --conditions browser bench/reactivity.ts
+
+      - name: DOM 5-way (happy-dom)
+        run: |
+          bun bench/build-solid.ts
+          NODE_ENV=production bun --conditions browser bench/dom.ts
+
+      - name: Install Chromium for Playwright
+        run: bunx playwright install --with-deps chromium
+
+      - name: Real-browser components (sx vs Solid vs React, paint included)
+        run: bun bench/playwright.ts "${{ github.event.inputs.instances }}"

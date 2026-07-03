@@ -10,15 +10,25 @@
     "serve": "bun examples/counter/server.ts",
     "todos": "bun examples/todos/server.ts",
     "store": "bun examples/store/server.ts",
+    "dashboard": "bun examples/dashboard/server.ts",
+    "ssr": "bun examples/ssr/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@babel/core": "^8.0.1",
     "@happy-dom/global-registrator": "^20.10.6",
+    "@tailwindcss/cli": "^4.3.2",
     "@types/bun": "latest",
     "@types/node": "^22.10.0",
+    "babel-preset-solid": "^1.9.12",
     "happy-dom": "^20.10.6",
     "oxc-parser": "^0.137.0",
+    "playwright": "^1.61.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "solid-js": "^1.9.14",
+    "tailwindcss": "^4.3.2",
     "typescript": "^5.7.2"
   }
 }
