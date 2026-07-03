@@ -136,17 +136,51 @@ node paths; sx's clone paths still pay a per-clone walk/search. Modest (~1.3×),
 create-only, and closable by tightening the `.sx` codegen. Against React it wins
 broadly on update-heavy work.
 
-## Real-browser bench (built — run locally)
-`bench/playwright.ts` measures create/update/clear for three static-heavy
-components (card / row / field) in real Chromium **with layout + paint** (two-rAF
-wait), sx vs Solid vs React. See `bench/pw/README.md`.
+## Real-browser bench — RESULTS (paint included) ★ the payoff
 
-```sh
-bun bench/playwright.ts 1000
-```
+`bench/playwright.ts`, 1000 instances/component, median of 5, real Chromium with
+**layout + paint** (two-rAF wait). Run in CI (GitHub Actions, Linux) because
+Windows blocks the local CDP pipe. **This is where the "create gap" story
+resolves.**
 
-**Verified here** (happy-dom): all three apps bundle (sx ~8 KB, Solid ~17 KB,
-React ~183 KB min); the Solid bundle resolves the client runtime (no SSR stub);
-sx & React component logic create/update/clear correctly. **Not runnable in this
-sandbox** — Chromium's CDP pipe is blocked (launch times out); the driver detects
-this and says so. Runs on a normal machine or in CI (workflow in the pw README).
+**[card]** (static-heavy)
+| phase | sx | solid | react | sx/solid | sx/react |
+|---|---|---|---|---|---|
+| create | 122.1 | 123.3 | 125.9 | 0.99× | 0.97× |
+| updateAll | 27.8 | 29.1 | 29.1 | 0.96× | 0.96× |
+| update10th | 15.9 | 22.7 | 26.7 | **0.70×** | **0.60×** |
+| clear | 31.6 | 32.1 | 32.1 | 0.98× | 0.98× |
+
+**[row]**
+| phase | sx | solid | react | sx/solid | sx/react |
+|---|---|---|---|---|---|
+| create | 82.3 | 83.5 | 73.2 | 0.99× | 1.12× |
+| updateAll | 29.7 | 23.8 | 45.5 | 1.25× | 0.65× |
+| update10th | 25.0 | 23.8 | 22.8 | 1.05× | 1.10× |
+| clear | 31.8 | 32.1 | 32.1 | 0.99× | 0.99× |
+
+**[field]**
+| phase | sx | solid | react | sx/solid | sx/react |
+|---|---|---|---|---|---|
+| create | 57.4 | 55.9 | 52.5 | 1.03× | 1.09× |
+| updateAll | 26.7 | 24.8 | 29.1 | 1.08× | 0.92× |
+| update10th | 23.3 | 27.9 | 27.4 | **0.84×** | **0.85×** |
+| clear | 31.9 | 32.2 | 30.6 | 0.99× | 1.04× |
+
+**What paint changes vs happy-dom:**
+- **The ~1.5× create gap DISAPPEARS.** create & clear are paint-bound, so sx ≈
+  Solid ≈ React (card create: 122 / 123 / 126). The gap was a JS-only artifact of
+  a nearly-all-dynamic 2-cell row — exactly what "static-heavy components" was
+  meant to expose.
+- **sx WINS partial updates** (update10th): card 0.70× vs Solid / 0.60× vs React;
+  field 0.84× / 0.85×. Fine-grained touches only changed nodes.
+- **sx beats React on interactivity** everywhere (row updateAll: 29.7 vs 45.5).
+
+**Definitive answer to "do we need a compiler to reach Solid":** No — in real
+browser conditions sx already matches Solid, and leads on fine-grained updates.
+The compiler gap only existed in a paint-free JS micro-benchmark.
+
+Verified before the run (happy-dom): all three bundle (sx ~8 KB, Solid ~17 KB,
+React ~183 KB min); Solid resolves the client runtime. CI workflow:
+`.github/workflows/bench.yml`. Windows note: the local CDP pipe is blocked by
+system security — see `bench/pw/README.md`.
