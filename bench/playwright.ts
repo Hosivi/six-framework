@@ -64,7 +64,11 @@ const bundle = async (
 
 const pageHtml = (js: string): string =>
   `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head>` +
-  `<body><div id="app"></div><script type="module">${js}</script></body></html>`;
+  `<body><div id="app"></div>` +
+  // React's bundle references process.env even after the NODE_ENV define; shim it
+  // so the module doesn't throw "process is not defined" before setting __bench.
+  `<script>window.process={env:{NODE_ENV:"production"}};</script>` +
+  `<script type="module">${js}</script></body></html>`;
 
 // Run one op in-page, waiting two rAFs so layout+paint are included.
 const runOp = (
@@ -146,45 +150,60 @@ const main = async (): Promise<void> => {
   }
 
   const results: Record<string, Record<string, Record<string, number>>> = {};
+  const okNames: string[] = [];
   for (const [name, js] of Object.entries(apps)) {
     const page = await browser.newPage();
-    await page.setContent(pageHtml(js), { waitUntil: "load" });
-    const ok = await page.evaluate(
-      () => typeof (window as unknown as { __bench?: unknown }).__bench === "object",
-    );
-    if (!ok) throw new Error(`${name}: window.__bench not defined (bundle/init failed)`);
+    page.on("pageerror", (e) => console.error(`  [${name}] pageerror: ${e.message}`));
+    try {
+      await page.setContent(pageHtml(js), { waitUntil: "load" });
+      const ok = await page.evaluate(
+        () => typeof (window as unknown as { __bench?: unknown }).__bench === "object",
+      );
+      if (!ok) throw new Error("window.__bench not defined (bundle/init failed)");
 
-    results[name] = {};
-    for (const comp of COMPONENTS) {
-      const samples: Record<string, number[]> = { create: [], updateAll: [], update10th: [], clear: [] };
-      for (let r = 0; r < ROUNDS; r++) {
-        samples.create!.push(await runOp(page, "create", N, comp));
-        if ((await countRows(page)) !== N) throw new Error(`${name}/${comp}: created ≠ ${N}`);
-        samples.updateAll!.push(await runOp(page, "updateAll", 0, comp));
-        samples.update10th!.push(await runOp(page, "update10th", 0, comp));
-        samples.clear!.push(await runOp(page, "clear", 0, comp));
-        if ((await countRows(page)) !== 0) throw new Error(`${name}/${comp}: clear left rows`);
+      results[name] = {};
+      for (const comp of COMPONENTS) {
+        const samples: Record<string, number[]> = { create: [], updateAll: [], update10th: [], clear: [] };
+        for (let r = 0; r < ROUNDS; r++) {
+          samples.create!.push(await runOp(page, "create", N, comp));
+          if ((await countRows(page)) !== N) throw new Error(`${comp}: created ≠ ${N}`);
+          samples.updateAll!.push(await runOp(page, "updateAll", 0, comp));
+          samples.update10th!.push(await runOp(page, "update10th", 0, comp));
+          samples.clear!.push(await runOp(page, "clear", 0, comp));
+          if ((await countRows(page)) !== 0) throw new Error(`${comp}: clear left rows`);
+        }
+        results[name]![comp] = Object.fromEntries(
+          PHASES.map((p) => [p, median(samples[p]!)]),
+        ) as Record<string, number>;
       }
-      results[name]![comp] = Object.fromEntries(
-        PHASES.map((p) => [p, median(samples[p]!)]),
-      ) as Record<string, number>;
+      okNames.push(name);
+      console.log(`  ✓ ${name}`);
+    } catch (e) {
+      // one broken framework must not sink the whole run — skip it, keep the rest
+      console.error(`  ✗ ${name} skipped: ${(e as Error).message}`);
     }
     await page.close();
   }
   await browser.close();
 
-  // 4) report per component (paint included)
+  if (okNames.length === 0) {
+    console.error("\nNo framework completed — see pageerror logs above.");
+    return;
+  }
+
+  // 4) report per component (paint included) — only frameworks that completed
   for (const comp of COMPONENTS) {
     console.log(`\n[${comp}]  ${N} instances  (ms, layout+paint included)`);
     console.table(
-      PHASES.map((p) => ({
-        phase: p,
-        sx: results.sx![comp]![p]!.toFixed(2),
-        solid: results.solid![comp]![p]!.toFixed(2),
-        react: results.react![comp]![p]!.toFixed(2),
-        "sx/solid": (results.sx![comp]![p]! / results.solid![comp]![p]!).toFixed(2) + "×",
-        "sx/react": (results.sx![comp]![p]! / results.react![comp]![p]!).toFixed(2) + "×",
-      })),
+      PHASES.map((p) => {
+        const row: Record<string, string> = { phase: p };
+        for (const n of okNames) row[n] = results[n]![comp]![p]!.toFixed(2);
+        if (okNames.includes("sx") && okNames.includes("solid"))
+          row["sx/solid"] = (results.sx![comp]![p]! / results.solid![comp]![p]!).toFixed(2) + "×";
+        if (okNames.includes("sx") && okNames.includes("react"))
+          row["sx/react"] = (results.sx![comp]![p]! / results.react![comp]![p]!).toFixed(2) + "×";
+        return row;
+      }),
     );
   }
 };
