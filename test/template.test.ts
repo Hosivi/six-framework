@@ -3,6 +3,7 @@
 import { test, expect } from "bun:test";
 import { signal } from "../src/reactive/index";
 import { template, insert, bindEvent } from "../src/dom/template";
+import { html } from "../src/dom/html";
 
 test("template clones a precompiled node (no per-instance tree build)", () => {
   const make = template(`<div class="card"><span></span></div>`);
@@ -103,4 +104,22 @@ test("a hand-written 'compiled' counter works (the shape @html will emit)", () =
 
   (buttons[0] as HTMLButtonElement).click(); // -
   expect(val.textContent).toBe("1");
+});
+
+test("insert clears a reactive list of html`` fragments without throwing", () => {
+  // html`` returns a DocumentFragment; insertBefore empties it. Clearing the
+  // list must remove the fragment's CHILDREN, not call fragment.remove()
+  // (DocumentFragment has no .remove() — that used to throw).
+  const list = signal(["a", "b"]);
+  const host = document.createElement("div");
+  insert(host, () => list().map((t) => html`<li>${t}</li>`));
+  expect(host.querySelectorAll("li").length).toBe(2);
+  expect(host.querySelectorAll("li")[0]?.textContent).toBe("a");
+
+  expect(() => list.set([])).not.toThrow();
+  expect(host.querySelectorAll("li").length).toBe(0);
+
+  // and it can re-populate after clearing
+  list.set(["x", "y", "z"]);
+  expect(Array.from(host.querySelectorAll("li")).map((e) => e.textContent)).toEqual(["x", "y", "z"]);
 });

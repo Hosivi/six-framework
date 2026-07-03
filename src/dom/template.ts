@@ -69,6 +69,16 @@ export const insert = (
         if (item === null || item === undefined || item === false || item === true) {
           continue;
         }
+        if (item instanceof DocumentFragment) {
+          // insertBefore EMPTIES a fragment (its children move into `parent`).
+          // Track those children — not the now-empty fragment, which has no
+          // .remove() — so clearNodes() can later remove them. Without this a
+          // reactive list of html`` results (each a fragment) throws on clear.
+          const kids = Array.from(item.childNodes) as ChildNode[];
+          parent.insertBefore(item, anchor);
+          for (const kid of kids) nodes.push(kid);
+          continue;
+        }
         const node: ChildNode =
           item instanceof Node ? (item as ChildNode) : document.createTextNode(String(item));
         parent.insertBefore(node, anchor);
