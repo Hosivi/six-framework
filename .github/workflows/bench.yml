@@ -4,6 +4,10 @@ name: bench
 # read-through in the job log; nothing is committed. Linux runner, so Playwright
 # drives real Chromium (Windows blocks the debugging pipe locally).
 on:
+  # push trigger works from any branch (workflow_dispatch's button only shows on
+  # the default branch). Runs whenever this bench branch is pushed.
+  push:
+    branches: [bench/playwright-suite]
   workflow_dispatch:
     inputs:
       instances:
@@ -34,4 +38,4 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Real-browser components (sx vs Solid vs React, paint included)
-        run: bun bench/playwright.ts "${{ github.event.inputs.instances }}"
+        run: bun bench/playwright.ts "${{ github.event.inputs.instances || '1000' }}"
