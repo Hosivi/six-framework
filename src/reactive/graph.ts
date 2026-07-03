@@ -17,7 +17,7 @@ export type State = 0 | 1 | 2;
 
 // ---- node model ----
 export interface Owner {
-  owned: Computation[] | null; // child computations created during this scope's run
+  owned: Owned[] | null; // child computations/scopes created during this scope's run
   cleanups: Array<() => void> | null; // onCleanup callbacks
   owner: Owner | null; // parent scope
   context: Record<symbol, unknown> | null; // context values provided at this scope
@@ -43,6 +43,7 @@ export interface Computation<T = unknown> extends Owner, ObservableNode {
   name?: string;
 }
 
+export type Owned = Computation | Owner;
 export type Source = SignalState | Computation;
 
 // ---- devtools instrumentation (opt-in, zero-cost when disabled) ----
@@ -252,7 +253,7 @@ export function disposeNode(node: Computation, full: boolean = true): void {
     node.cleanups = null;
   }
   if (node.owned !== null) {
-    for (const child of node.owned) disposeNode(child, true);
+    for (const child of node.owned) disposeOwned(child);
     node.owned = null;
   }
   if (node.sources !== null) {
@@ -267,13 +268,18 @@ export function onCleanup(fn: () => void): void {
   if (CurrentOwner !== null) (CurrentOwner.cleanups ??= []).push(fn);
 }
 
+function disposeOwned(node: Owned): void {
+  if ("fn" in node) disposeNode(node, true);
+  else disposeOwner(node);
+}
+
 export function disposeOwner(owner: Owner): void {
   if (owner.cleanups !== null) {
     for (const c of owner.cleanups) c();
     owner.cleanups = null;
   }
   if (owner.owned !== null) {
-    for (const child of owner.owned) disposeNode(child, true);
+    for (const child of owner.owned) disposeOwned(child);
     owner.owned = null;
   }
 }

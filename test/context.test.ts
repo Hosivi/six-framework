@@ -1,7 +1,8 @@
 // Tests for context (generic) and provideStore/useStore.
 
 import { test, expect } from "bun:test";
-import { createRoot, createContext, provide, useContext } from "../src/reactive/index";
+import { createRoot, createContext, effect, provide, signal, useContext } from "../src/reactive/index";
+import { channel } from "../src/messaging/index";
 import {
   createStore,
   createStoreContext,
@@ -71,4 +72,50 @@ test("useStore throws when no store was provided", () => {
   createRoot(() => {
     expect(() => useStore(CounterStore)).toThrow("no store provided");
   });
+});
+
+test("effects created inside provide are disposed with the parent root", () => {
+  const Theme = createContext("light");
+  const count = signal(0);
+  const seen: number[] = [];
+
+  const dispose = createRoot((disposeRoot) => {
+    provide(Theme, "dark", () => {
+      effect(() => {
+        useContext(Theme);
+        seen.push(count());
+      });
+    });
+    return disposeRoot;
+  });
+
+  expect(seen).toEqual([0]);
+  count.set(1);
+  expect(seen).toEqual([0, 1]);
+
+  dispose();
+  count.set(2);
+  expect(seen).toEqual([0, 1]);
+});
+
+test("channel subscriptions created inside provide are disposed with the parent root", () => {
+  const Scope = createContext<null>(null);
+  const messages = channel<number>();
+  const seen: number[] = [];
+
+  const dispose = createRoot((disposeRoot) => {
+    provide(Scope, null, () => {
+      messages.on((value) => {
+        seen.push(value);
+      });
+    });
+    return disposeRoot;
+  });
+
+  messages.send(1);
+  expect(seen).toEqual([1]);
+
+  dispose();
+  messages.send(2);
+  expect(seen).toEqual([1]);
 });

@@ -1,7 +1,7 @@
 // Tests for the functional router (route/router/navigate/link).
 
 import { test, expect } from "bun:test";
-import { createRoot } from "../src/reactive/index";
+import { createRoot, effect, signal } from "../src/reactive/index";
 import { div, span } from "../src/dom/tags";
 import { route, router, navigate, setPath, link, withRouter, currentPath } from "../src/router/index";
 
@@ -200,4 +200,27 @@ test("withRouter rejects async callbacks because router context is sync-only", a
   ).rejects.toThrow(
     "provide() callbacks must be synchronous; context is not preserved across await.",
   );
+});
+
+test("withRouter effects are disposed with the parent root", () => {
+  const trigger = signal(0);
+  const seen: string[] = [];
+
+  const dispose = createRoot((disposeRoot) => {
+    withRouter("/users/1", () => {
+      effect(() => {
+        trigger();
+        seen.push(currentPath());
+      });
+    });
+    return disposeRoot;
+  });
+
+  expect(seen).toEqual(["/users/1"]);
+  trigger.set(1);
+  expect(seen).toEqual(["/users/1", "/users/1"]);
+
+  dispose();
+  trigger.set(2);
+  expect(seen).toEqual(["/users/1", "/users/1"]);
 });

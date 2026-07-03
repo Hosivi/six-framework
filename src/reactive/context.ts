@@ -38,6 +38,7 @@ export function provide<T, R>(context: Context<T>, value: T, fn: () => R): R {
     owner: parent,
     context: { [context.id]: value },
   };
+  if (parent !== null) (parent.owned ??= []).push(scope);
   setOwner(scope);
   try {
     const result = fn();
