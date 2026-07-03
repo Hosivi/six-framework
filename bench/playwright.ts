@@ -62,13 +62,14 @@ const bundle = async (
   return build.outputs[0]!.text();
 };
 
-const pageHtml = (js: string): string =>
-  `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head>` +
-  `<body><div id="app"></div>` +
-  // React's bundle references process.env even after the NODE_ENV define; shim it
-  // so the module doesn't throw "process is not defined" before setting __bench.
-  `<script>window.process={env:{NODE_ENV:"production"}};</script>` +
-  `<script type="module">${js}</script></body></html>`;
+// Static page; the app bundle is served as an EXTERNAL script via page.route.
+// (Inlining it through page.setContent uses document.write, which chokes on a
+// large minified bundle — React's 183KB threw "Invalid or unexpected token".)
+const PAGE_HTML =
+  `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style>` +
+  // React reads process.env even after the NODE_ENV define — shim it.
+  `<script>window.process={env:{NODE_ENV:"production"}};</script></head>` +
+  `<body><div id="app"></div><script type="module" src="/app.js"></script></body></html>`;
 
 // Run one op in-page, waiting two rAFs so layout+paint are included.
 const runOp = (
@@ -155,7 +156,13 @@ const main = async (): Promise<void> => {
     const page = await browser.newPage();
     page.on("pageerror", (e) => console.error(`  [${name}] pageerror: ${e.message}`));
     try {
-      await page.setContent(pageHtml(js), { waitUntil: "load" });
+      await page.route("**/*", (route) => {
+        const u = route.request().url();
+        if (u.endsWith("/app.js"))
+          return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: js });
+        return route.fulfill({ contentType: "text/html; charset=utf-8", body: PAGE_HTML });
+      });
+      await page.goto("https://sx.bench/", { waitUntil: "load" });
       const ok = await page.evaluate(
         () => typeof (window as unknown as { __bench?: unknown }).__bench === "object",
       );
