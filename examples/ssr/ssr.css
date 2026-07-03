@@ -1,0 +1,46 @@
+.app {
+  width: min(440px, 92vw);
+  background: #111c33;
+  border: 1px solid #1e2d4a;
+  border-radius: 16px;
+  padding: 28px 30px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+.app h1 { margin: 0 0 18px; font-size: 22px; }
+
+.status { margin: 0 0 20px; color: #94a3b8; font-size: 14px; }
+.badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+.badge--off { background: #422006; color: #fbbf24; }
+.badge--on  { background: #052e1a; color: #4ade80; }
+
+.counter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.count { font-size: 30px; min-width: 48px; color: #38bdf8; }
+.btn {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  background: #1d4ed8;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+}
+.btn:hover { background: #2563eb; }
+
+.hint {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+}

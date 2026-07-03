@@ -1,0 +1,15 @@
+/* Tailwind v4 entry for the dashboard example.
+ *
+ * The CLI scans dashboard.ts (see @source) for utility classes and emits only
+ * the CSS actually used. `bun run dashboard` builds this into
+ * dashboard.generated.css, which serve() inlines. Config is CSS-first: the
+ * three brand tokens below become bg-/text-/border- utilities (bg-panel, …). */
+
+@import "tailwindcss";
+@source "./dashboard.ts";
+
+@theme {
+  --color-panel: #111c33;
+  --color-surface: #0b1526;
+  --color-line: #1e2d4a;
+}

@@ -4,5 +4,11 @@
     "*.sx": "typescript"
   },
   "editor.bracketPairColorization.enabled": true,
-  "editor.guides.bracketPairs": "active"
+  "editor.guides.bracketPairs": "active",
+
+  "//tailwind": "Tailwind CSS IntelliSense only autocompletes inside contexts it recognizes as class lists (class=/className= and known functions). sx passes utilities to .class()/.addClass() and to UPPER_CASE bundle consts, which it does NOT recognize by default. These regexes tell it where our class strings live so autocomplete, hover, and linting work. NOTE: any ALL-CAPS const assigned a string literal is scanned as classes — in this repo those are only the class bundles (VIEW/H2/BTN/LINK).",
+  "tailwindCSS.experimental.classRegex": [
+    "\\b(?:class|addClass)\\(\\s*[\"'`]([^\"'`]*)",
+    "\\b[A-Z][A-Z0-9_]+\\s*=\\s*[\"'`]([^\"'`]*)"
+  ]
 }
