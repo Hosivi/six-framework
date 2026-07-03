@@ -488,12 +488,11 @@ export const hydrate = (node: SxNode, target: Element): (() => void) => {
   let el: HTMLElement | null = null;
   const dispose = createRoot((disposeRoot) => {
     const existing = target.firstElementChild as HTMLElement | null;
-    const hasSingleRootChild =
-      target.childElementCount === 1 && target.firstElementChild === existing && target.children.length === 1;
+    const hasSingleRootNode = target.childNodes.length === 1 && target.firstChild === existing;
     if (
       existing &&
       existing.tagName.toLowerCase() === node.tag &&
-      hasSingleRootChild
+      hasSingleRootNode
     ) {
       el = existing;
       hydrateElement(node, el);

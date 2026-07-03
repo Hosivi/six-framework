@@ -351,6 +351,26 @@ test("hydrates by removing extra stale root siblings", () => {
   expect(host.textContent).toBe("public");
 });
 
+test("hydrates by removing stale root text siblings", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><span>public</span></div>SECRET`;
+
+  createRoot(() => hydrate(div([span("public")]), host));
+
+  expect(host.childNodes).toHaveLength(1);
+  expect(host.textContent).toBe("public");
+});
+
+test("hydrates by removing stale root comment siblings", () => {
+  const host = document.createElement("div");
+  host.innerHTML = `<div><span>public</span></div><!--SECRET-->`;
+
+  createRoot(() => hydrate(div([span("public")]), host));
+
+  expect(host.childNodes).toHaveLength(1);
+  expect(host.textContent).toBe("public");
+});
+
 test("SSR output contains hydration markers", () => {
   const show = signal(true);
   const html = div(when(() => show(), () => span("x"))).toHTML();
